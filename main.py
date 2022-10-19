@@ -5,9 +5,12 @@ from os import path
 from aiogram.utils.executor import Executor
 from environs import Env
 
+from app.conversation.handlers.init_handlers import init_handlers
 from app.start_bot import init_bot, start_bot
 from db.db_functions import DbFunctions
 from environment import init_environment
+from redis_repository.redis import init_redis
+from redis_repository.redis_repository import RedisRepository
 
 
 def start_app():
@@ -35,6 +38,9 @@ def start_app():
 
     async def on_startup(*_, **__):
         db = DbFunctions(db_connect_info)
+        redis = await init_redis(environment=environment)
+        redis_repository = RedisRepository(redis=redis)
+        init_handlers(dp=dispatcher, db=db, redis=redis_repository, env=environment)
 
     async def on_shutdown(*_, **__):
         pass
@@ -42,3 +48,7 @@ def start_app():
     executor.on_startup(on_startup)
     executor.on_shutdown(on_shutdown)
     start_bot(executor=executor, environment=environment)
+
+
+if __name__ == '__main__':
+    start_app()

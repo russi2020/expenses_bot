@@ -40,6 +40,21 @@ class DbConnector:
             cur.execute("COMMIT")
 
 
+class BaseDbExtended(DbConnector):
+
+    def _db_execute_with_fetchall_return(self, query, *args) -> List[tuple]:
+        """For select all results from database"""
+        with self._get_cursor() as cur:
+            cur.execute(query=query, vars=args)
+            return cur.fetchall()
+
+    def _db_execute_with_fetchone_return(self, query, *args) -> Any:
+        """For select one result from database"""
+        with self._get_cursor() as cur:
+            cur.execute(query=query, vars=args)
+            return cur.fetchone()[0]
+
+
 class DbCreator(DbConnector):
 
     def __init__(self, db_connect_info: Dict[str, Any]):
@@ -50,7 +65,7 @@ class DbCreator(DbConnector):
         query = """
         CREATE TABLE IF NOT EXISTS expenses_bot_user(
         id SERIAL PRIMARY KEY, name VARCHAR(100), last_name VARCHAR(100), email VARCHAR(100), 
-        telegram_id NOT NULL UNIQUE INTEGER)
+        telegram_id INTEGER NOT NULL UNIQUE)
         """
         self._execute(query=query)
 
@@ -58,14 +73,15 @@ class DbCreator(DbConnector):
         """Creates table expenses_category"""
         query = """
         CREATE TABLE IF NOT EXISTS expenses_category(
-        id SERIAL PRIMARY KEY, category_name VARCHAR(100);
+        id SERIAL PRIMARY KEY, category_name VARCHAR(100)
+        );
         """
         self._execute(query=query)
 
     def create_currency_table(self):
         """Creates table currency"""
         query = """
-        CREATE TABLE IF NOT EXISTS currency(id SERIAL PRIMARY KEY, currency_name VARCHAR(100))
+        CREATE TABLE IF NOT EXISTS currency(id SERIAL PRIMARY KEY, currency_name VARCHAR(100));
         """
         self._execute(query=query)
 
@@ -90,14 +106,14 @@ class DbCreator(DbConnector):
         CREATE TABLE IF NOT EXISTS expenses(
         id SERIAL PRIMARY KEY,
         expenses_sum FLOAT,
-        currency_id NOT NULL INTEGER,
-        category_id NOT NULL INTEGER,
-        user_id NOT NULL INTEGER,
-        created_at DATE
-        FOREIGN KEY currency_id REFERENCES currency(id) ON DELETE RESTRICT
-        FOREIGN KEY category_id REFERENCES expenses_category(id) ON DELETE RESTRICT 
-        FOREIGN KEY user_id REFERENCES expenses_bot_user(id) ON DELETE RESTRICT;
-        )
+        currency_id INTEGER NOT NULL,
+        category_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at DATE DEFAULT CURRENT_DATE,
+        FOREIGN KEY (currency_id) REFERENCES currency(id) ON DELETE RESTRICT,
+        FOREIGN KEY (category_id) REFERENCES expenses_category(id) ON DELETE RESTRICT,
+        FOREIGN KEY (user_id) REFERENCES expenses_bot_user(id) ON DELETE RESTRICT
+        );
         """
         self._execute(query=query)
 
@@ -187,6 +203,7 @@ class DbCreator(DbConnector):
         """Creates all table and functions"""
         self.create_users_table()
         self.create_category_table()
+        self.create_currency_table()
         self.create_expenses_table()
         self.create_first_weekday_func()
         self.create_last_weekday_func()
@@ -195,36 +212,59 @@ class DbCreator(DbConnector):
         self.create_get_specific_month_last_day()
 
 
-class DbFunctions(DbConnector):
+class DbFunctions(BaseDbExtended):
 
     def __init__(self, db_connect_info: Dict[str, Any]):
         super().__init__(db_connect_info)
+        logger = logging.getLogger(__name__)
+        logger.info("Start db_functions instance")
 
     def create_user(self, name: str, last_name: str, email: str, telegram_id: int):
         """Inserts user entry into expenses_bot_user table"""
         query = """
-        INSERT INTO expenses_bot_user(name, last_name, email, telegram_id) VALUES ($1, $2, $3, $4)
+        INSERT INTO expenses_bot_user(name, last_name, email, telegram_id) VALUES (%s, %s, %s, %S)
         """
         self._execute(query, name, last_name, email, telegram_id)
+
+    def find_user_by_email(self, email: str):
+        """Get user info """
+        query = """SELECT email FROM expenses_bot_user WHERE email = %s;"""
+        return self._db_execute_with_fetchone_return(query, email)
+
+    def get_user_id_by_telegram_id(self, telegram_id: int):
+        query = """SELECT id FROM expenses_bot_user WHERE telegram_id = %s;"""
+        return self._db_execute_with_fetchone_return(query, telegram_id)
+
+    def check_category(self, category_name: str):
+        query = """
+        SELECT id FROM expenses_category WHERE category_name = %s;
+        """
+        return self._db_execute_with_fetchone_return(query, category_name)
 
     def insert_category(self, category_name: str):
         """Inserts category entry into expenses_category table"""
         query = """
-        INSERT INTO expenses_category(category_name) VALUES ($1)
+        INSERT INTO expenses_category(category_name) VALUES (%s);
         """
         self._execute(query, category_name)
+
+    def check_currency(self, currency_name: str):
+        query = """
+        SELECT id FROM currency WHERE currency_name = %s;
+        """
+        return self._db_execute_with_fetchone_return(query, currency_name)
 
     def insert_currency(self, currency_name: str):
         """Inserts currency entry into currency table"""
         query = """
-        INSERT INTO currency(currency_name) VALUES ($1)
+        INSERT INTO currency(currency_name) VALUES (%s);
         """
         self._execute(query, currency_name)
 
     def insert_expense(self, spending_sum: int, currency_id: int, category_id: int, user_id: int):
         """Insert expense into expenses table"""
         query = """
-        INSERT INTO expenses(expenses_sum, currency_id, category_id, user_id) VALUES ($1, $2, $3, $4)
+        INSERT INTO expenses(expenses_sum, currency_id, category_id, user_id) VALUES (%s, %s, %s, %s)
         """
         self._execute(query, spending_sum, currency_id, category_id, user_id)
 
@@ -235,7 +275,7 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE date = $1
+        WHERE date = %s
         """
         self._execute(query, day)
 
@@ -248,9 +288,7 @@ class DbFunctions(DbConnector):
         JOIN ON currency cur ON exp.currency_id = cur.id
         WHERE created_at BETWEEN first_wd() AND last_wd();
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query)
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query)
 
     def get_expenses_by_month_till_today(self):
         """Expenses for month till current day"""
@@ -261,9 +299,7 @@ class DbFunctions(DbConnector):
         JOIN ON currency cur ON exp.currency_id = cur.id
         WHERE created_at > CURRENT_DATE - INTERVAL '1 month';
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query)
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query)
 
     def get_expenses_by_current_month(self):
         """Expenses for current month. From first day till last day"""
@@ -274,9 +310,7 @@ class DbFunctions(DbConnector):
         JOIN ON currency cur ON exp.currency_id = cur.id
         WHERE created_at BETWEEN first_monthday() AND last_monthday();
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query)
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query)
 
     def get_expenses_by_specific_month(self, month_number: str, year_number: str):
         """Expenses for specific month.
@@ -287,11 +321,9 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE created_at BETWEEN CONCAT($1, $2, '01')::date AND last_specific_monthday($1, $2);
+        WHERE created_at BETWEEN CONCAT(%s, %s, '01')::date AND last_specific_monthday(%s, %s);
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(month_number, year_number,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, month_number, year_number, month_number, year_number)
 
     def get_expenses_by_year(self):
         """Expenses for current year from yor first expenses entry"""
@@ -302,9 +334,7 @@ class DbFunctions(DbConnector):
         JOIN ON currency cur ON exp.currency_id = cur.id
         WHERE created_at > date_trunc('year', CURRENT_DATE)::date;
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query)
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query)
 
     def get_expenses_by_category_for_current_day(self, category: str):
         """Gets expenses for today by category"""
@@ -313,11 +343,9 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE exp_cat.category_name = $1;
+        WHERE exp_cat.category_name = %s;
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category)
 
     def get_expenses_by_specific_category_for_today(self, category: str):
         """Gets expenses for today by specific category. For example food"""
@@ -326,11 +354,9 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE exp_cat.category_name = $1 AND created_at = CURRENT_DATE;
+        WHERE exp_cat.category_name = %s AND created_at = CURRENT_DATE;
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category)
 
     def get_expenses_by_specific_category_for_specific_day(self, category: str, date: str):
         """Gets expenses for specific date by specific category. For example food"""
@@ -339,11 +365,9 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE exp_cat.category_name = $1 AND created_at = $2;
+        WHERE exp_cat.category_name = %s AND created_at = %s;
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category, date,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category, date)
 
     def get_expenses_by_category_for_week(self, category: str):
         """Gets expenses for current week by category. For example food"""
@@ -352,12 +376,10 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE exp_cat.category_name = $1 
+        WHERE exp_cat.category_name = %s
         AND created_at BETWEEN first_wd() AND last_wd();
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category)
 
     def get_expenses_by_category_for_specific_month(self, category: str, month: str, year: str):
         """Expenses by week specific month.
@@ -369,12 +391,10 @@ class DbFunctions(DbConnector):
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE exp_cat.category_name = $1
-        AND created_at BETWEEN CONCAT($2, $3, '01')::date AND last_specific_monthday($2, $3);     
+        WHERE exp_cat.category_name = %s
+        AND created_at BETWEEN CONCAT(%s, %s, '01')::date AND last_specific_monthday(%s, %s);     
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category, month, year,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category, month, year, month, year)
 
     def get_expenses_by_category_for_year(self, category: str):
         """Get expenses for year by specific category. For example food."""
@@ -384,8 +404,6 @@ class DbFunctions(DbConnector):
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
         JOIN ON currency cur ON exp.currency_id = cur.id
         WHERE created_at > date_trunc('year', CURRENT_DATE)::date
-        AND exp_cat.category_name = $1;
+        AND exp_cat.category_name = %s;
         """
-        with self._get_cursor as cur:
-            cur.execute(query=query, vars=(category,))
-            return cur.fetchall()
+        return self._db_execute_with_fetchall_return(query, category)
