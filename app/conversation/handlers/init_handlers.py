@@ -1,3 +1,6 @@
+import logging
+from os import path
+
 from aiogram.dispatcher import Dispatcher
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 
@@ -12,6 +15,11 @@ from environment import Environment
 
 def init_handlers(dp: Dispatcher, db: DbFunctions, env: Environment,
                   redis: RedisRepository):
+    log_file_path = path.join(path.dirname(path.abspath("__file__")), "logging.ini")
+    logging.config.fileConfig(log_file_path, disable_existing_loggers=False)
+    logger = logging.getLogger(__name__)
+    logger.info("Start expenses_insert handler")
+
     dp.middleware.setup(LoggingMiddleware())
     dp.middleware.setup(AuthenticationMiddleware(redis_repository=redis))
     init_authorization_handlers(dp=dp, db=db, _env=env, redis=redis)

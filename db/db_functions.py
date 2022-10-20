@@ -65,7 +65,8 @@ class DbCreator(DbConnector):
         query = """
         CREATE TABLE IF NOT EXISTS expenses_bot_user(
         id SERIAL PRIMARY KEY, name VARCHAR(100), last_name VARCHAR(100), email VARCHAR(100), 
-        telegram_id INTEGER NOT NULL UNIQUE)
+        telegram_id INTEGER NOT NULL UNIQUE
+        );
         """
         self._execute(query=query)
 
@@ -94,9 +95,9 @@ class DbCreator(DbConnector):
         CREATE TABLE IF NOT EXISTS expenses_dictionary(
         id SERIAL PRIMARY KEY, 
         word VARCHAR(100),
-        category_id INTEGER
-        FOREIGN KEY category_id REFERENCES expenses_category(id) ON DELETE RESTRICT;
-        )
+        category_id INTEGER,
+        FOREIGN KEY (category_id) REFERENCES expenses_category(id) ON DELETE RESTRICT
+        );
         """
         self._execute(query=query)
 
@@ -203,6 +204,7 @@ class DbCreator(DbConnector):
         """Creates all table and functions"""
         self.create_users_table()
         self.create_category_table()
+        self.create_table_category_dictionary()
         self.create_currency_table()
         self.create_expenses_table()
         self.create_first_weekday_func()
@@ -227,15 +229,17 @@ class DbFunctions(BaseDbExtended):
         self._execute(query, name, last_name, email, telegram_id)
 
     def find_user_by_email(self, email: str):
-        """Get user info """
+        """Checks if email exists in database"""
         query = """SELECT email FROM expenses_bot_user WHERE email = %s;"""
         return self._db_execute_with_fetchone_return(query, email)
 
     def get_user_id_by_telegram_id(self, telegram_id: int):
+        """Get user id by telegram_id"""
         query = """SELECT id FROM expenses_bot_user WHERE telegram_id = %s;"""
         return self._db_execute_with_fetchone_return(query, telegram_id)
 
     def check_category(self, category_name: str):
+        """Get expenses_category id by category_name"""
         query = """
         SELECT id FROM expenses_category WHERE category_name = %s;
         """
@@ -249,6 +253,7 @@ class DbFunctions(BaseDbExtended):
         self._execute(query, category_name)
 
     def check_currency(self, currency_name: str):
+        """Get currency id by currency_name"""
         query = """
         SELECT id FROM currency WHERE currency_name = %s;
         """
@@ -274,8 +279,8 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
-        WHERE date = %s
+        JOIN currency cur ON exp.currency_id = cur.id
+        WHERE created_at = %s
         """
         self._execute(query, day)
 
@@ -285,7 +290,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at BETWEEN first_wd() AND last_wd();
         """
         return self._db_execute_with_fetchall_return(query)
@@ -296,7 +301,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at > CURRENT_DATE - INTERVAL '1 month';
         """
         return self._db_execute_with_fetchall_return(query)
@@ -307,7 +312,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at BETWEEN first_monthday() AND last_monthday();
         """
         return self._db_execute_with_fetchall_return(query)
@@ -320,7 +325,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at BETWEEN CONCAT(%s, %s, '01')::date AND last_specific_monthday(%s, %s);
         """
         return self._db_execute_with_fetchall_return(query, month_number, year_number, month_number, year_number)
@@ -331,7 +336,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at > date_trunc('year', CURRENT_DATE)::date;
         """
         return self._db_execute_with_fetchall_return(query)
@@ -342,7 +347,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name 
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE exp_cat.category_name = %s;
         """
         return self._db_execute_with_fetchall_return(query, category)
@@ -353,7 +358,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE exp_cat.category_name = %s AND created_at = CURRENT_DATE;
         """
         return self._db_execute_with_fetchall_return(query, category)
@@ -364,7 +369,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE exp_cat.category_name = %s AND created_at = %s;
         """
         return self._db_execute_with_fetchall_return(query, category, date)
@@ -375,7 +380,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE exp_cat.category_name = %s
         AND created_at BETWEEN first_wd() AND last_wd();
         """
@@ -390,7 +395,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE exp_cat.category_name = %s
         AND created_at BETWEEN CONCAT(%s, %s, '01')::date AND last_specific_monthday(%s, %s);     
         """
@@ -402,7 +407,7 @@ class DbFunctions(BaseDbExtended):
         SELECT exp.expenses_sum, cur.currency_name, exp_cat.category_name
         FROM expenses exp 
         JOIN expenses_category exp_cat ON exp.category_id = exp_cat.id
-        JOIN ON currency cur ON exp.currency_id = cur.id
+        JOIN currency cur ON exp.currency_id = cur.id
         WHERE created_at > date_trunc('year', CURRENT_DATE)::date
         AND exp_cat.category_name = %s;
         """

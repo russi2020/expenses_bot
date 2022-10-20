@@ -3,7 +3,6 @@ from os import path
 
 from aiogram import types
 from aiogram.dispatcher import Dispatcher, FSMContext
-from typing import List, Union
 
 from app.conversation.dialogs.buttons import MenuButtons
 from app.conversation.dialogs.dialogs import buttons_names, msg
